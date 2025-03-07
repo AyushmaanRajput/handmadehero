@@ -17,7 +17,9 @@ internal_function void Win32ResizeDIBSection(int Width, int Height) {
   if(BitmapInfo.bmiHeader.biSize){
     // already allocated so free it using DeleteObject
     DeleteObject(BitmapHandle);
-  }else{
+  }
+
+  if(!BitmapDeviceContext){
   //NOTE: We create a global  the device context for bitmap here 
     BitmapDeviceContext= CreateCompatibleDC(0);
   }
@@ -55,15 +57,14 @@ internal_function void Win32ResizeDIBSection(int Width, int Height) {
   BitmapHandle =
       CreateDIBSection(BitmapDeviceContext, &BitmapInfo, DIB_RGB_COLORS,
                        &BitMapMemory,
-                       0, 0);// The bit map memory is what we will get
-                                      // from window to draw to
+                       0, 0);// The bit map memory is what we will get from window to draw to
 }
 
 internal_function void Win32UpdateWindow(HDC DeviceContext, int X, int Y,
                                          int Width, int Height) {
-  int StretchDIBits(
+  StretchDIBits(
       DeviceContext, X, Y, Width, Height, X, Y, Width,
-      Height, [in] const VOID *lpBits, [in] const BITMAPINFO *lpbmi,
+      Height, BitMapMemory, &BitmapInfo,
       DIB_RGB_COLORS,
       SRCCOPY); // we will be doing direct rgb writing into our buffer
 }
@@ -100,7 +101,7 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND windowHandle, UINT message,
     int Y = ClientRect.top;
     LONG width = ClientRect.right - X;
     LONG height = ClientRect.bottom - Y;
-    Win32ResizeDIBSection(DeviceContext, width,
+    Win32ResizeDIBSection(width,
                           height); // our function that draws to a fixed buffer
 
     OutputDebugStringA("change size\n ");
