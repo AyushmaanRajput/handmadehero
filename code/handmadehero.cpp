@@ -12,9 +12,8 @@ global_variable HBITMAP BitmapHandle;
 global_variable HDC BitmapDeviceContext;
 
 internal_function void Win32ResizeDIBSection(int Width, int Height) {
-
   // TODO: For now we are
-  if(BitmapInfo.bmiHeader.biSize){
+  if(BitmapHandle){
     // already allocated so free it using DeleteObject
     DeleteObject(BitmapHandle);
   }
@@ -28,6 +27,7 @@ internal_function void Win32ResizeDIBSection(int Width, int Height) {
   // BITMAPINFOHEADER bmiHeader;
   // RGBQUAD          bmiColors[1];
   //} BITMAPINFO, *LPBITMAPINFO, *PBITMAPINFO;
+
   BitmapInfo.bmiHeader.biSize = sizeof(BitmapInfo.bmiHeader);
   BitmapInfo.bmiHeader.biWidth = Width;
   BitmapInfo.bmiHeader.biHeight = Height;
