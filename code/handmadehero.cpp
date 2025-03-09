@@ -1,4 +1,5 @@
 #include <cstdint>
+#include <iostream>
 #include <stdint.h>
 #include <windows.h>
 #include <xinput.h>
@@ -97,7 +98,7 @@ internal_function win32_window_dimension Win32GetWindowDimension(HWND Window) {
   return (WindowDimension);
 }
 internal_function void Win32RenderWeirdGradient(
-    win32_offscreen_buffer Buffer,
+    win32_offscreen_buffer *Buffer,
     int XOffset,
     int YOffset) {
 
@@ -105,11 +106,11 @@ internal_function void Win32RenderWeirdGradient(
   // NOTE: Once we have the memory we can draw in int
   // case the void* as unit8
 
-  uint8 *Row = (uint8 *)Buffer.Memory;
+  uint8 *Row = (uint8 *)Buffer->Memory;
   // pixels on the my game window have
-  for (int Y = 0; Y < Buffer.Height; Y++) {
+  for (int Y = 0; Y < Buffer->Height; Y++) {
     uint32 *Pixel = (uint32 *)Row;
-    for (int X = 0; X < Buffer.Width; X++) {
+    for (int X = 0; X < Buffer->Width; X++) {
       /*
        * Pixel in Memory 00 00 00 00
        * Common Sense:   RR GG BB XX(Some padding)
@@ -137,12 +138,12 @@ internal_function void Win32RenderWeirdGradient(
       uint8 Red = ((X + Y) + (XOffset + YOffset));
       *Pixel++ = ((Green << 8) | Blue | (Red << 16));
     }
-    Row += Buffer.Pitch;
+    Row += Buffer->Pitch;
   }
 }
 internal_function void Win32DisplayBufferInWindow(
     HDC DeviceContext,
-    win32_offscreen_buffer Buffer,
+    win32_offscreen_buffer *Buffer,
     int Width,
     int Height) {
   int WindowWidth = Width;
@@ -157,10 +158,10 @@ internal_function void Win32DisplayBufferInWindow(
       WindowHeight,
       0,
       0,
-      Buffer.Width,
-      Buffer.Height,
-      Buffer.Memory,
-      &Buffer.Info,
+      Buffer->Width,
+      Buffer->Height,
+      Buffer->Memory,
+      &Buffer->Info,
       DIB_RGB_COLORS,
       SRCCOPY); // we will be doing direct rgb writing into our buffer
 }
@@ -227,12 +228,54 @@ LRESULT CALLBACK Win32MainWindowCallback(
     LPARAM LParam) {
   LRESULT Result = 0;
   switch (message) {
+  case WM_KEYDOWN:
+  case WM_SYSKEYDOWN:
+  case WM_KEYUP:
+  case WM_SYSKEYUP: {
+    uint32 vkCode = WParam;
+    bool wasDown = ((LParam & (1 << 30)) != 0);
+    bool isDown = ((LParam & (1 << 31)) == 0);
+    if (isDown != wasDown) {
+      if (vkCode == 'W') {
+        /*OutputDebugStringA("W\n");*/
+        /*if (isDown) {*/
+        /*  OutputDebugStringA("Is down");*/
+        /*}*/
+        /*if (wasDown) {*/
+        /*  OutputDebugStringA("was down");*/
+        /*}*/
+        /*OutputDebugStringA("\n");*/
+      } else if (vkCode == 'A') {
+        OutputDebugStringA("A\n");
+      } else if (vkCode == 'S') {
+        OutputDebugStringA("S\n");
+      } else if (vkCode == 'D') {
+        OutputDebugStringA("D\n");
+      } else if (vkCode == VK_SPACE) {
+        OutputDebugStringA("Spacebar\n");
+      } else if (vkCode == VK_LEFT) {
+        OutputDebugStringA("Left Arrow\n");
+      } else if (vkCode == VK_RIGHT) {
+        OutputDebugStringA("Right Arrow\n");
+      } else if (vkCode == VK_UP) {
+        OutputDebugStringA("Up Arrow\n");
+      } else if (vkCode == VK_DOWN) {
+        OutputDebugStringA("Down Arrow\n");
+      } else if (vkCode == 'Q') {
+        OutputDebugStringA("Q\n");
+      } else if (vkCode == 'E') {
+        OutputDebugStringA("E\n");
+      } else if (vkCode == VK_ESCAPE) {
+        OutputDebugStringA("Escape\n");
+      }
+    }
+  } break;
   case WM_PAINT: {
     PAINTSTRUCT PaintStruct;
     HDC DeviceContext = BeginPaint(windowHandle, &PaintStruct);
     win32_window_dimension Dimension = Win32GetWindowDimension(windowHandle);
     Win32DisplayBufferInWindow(
-        DeviceContext, GlobalBackBuffer, Dimension.Width, Dimension.Height);
+        DeviceContext, &GlobalBackBuffer, Dimension.Width, Dimension.Height);
     EndPaint(windowHandle, &PaintStruct);
   } break;
   case WM_SIZE: {
@@ -359,6 +402,10 @@ int CALLBACK WinMain(
             if (AButton) {
               ++YOffset;
             }
+
+            if (BButton) {
+              ++XOffset;
+            }
           } else {
             // Controller is not connected
             // This is important as we might want to show that a particular user
@@ -366,14 +413,22 @@ int CALLBACK WinMain(
           }
         }
 
+        /*XINPUT_VIBRATION Vibration;*/
+        /*Vibration.wLeftMotorSpeed = 60000;*/
+        /*Vibration.wRightMotorSpeed = 60000;*/
+        /*XInputSetState(0, &Vibration);*/
+
         // Step2: Render(calcualte) the gradient in background inside of our
         // backbuffer
-        Win32RenderWeirdGradient(GlobalBackBuffer, ++XOffset, YOffset);
+        Win32RenderWeirdGradient(&GlobalBackBuffer, XOffset, YOffset);
         win32_window_dimension Dimension =
             Win32GetWindowDimension(WindowHandle);
         // Step3: Display our back buffer ( Acutal Rendering to the screen )
         Win32DisplayBufferInWindow(
-            DeviceContext, GlobalBackBuffer, Dimension.Width, Dimension.Height);
+            DeviceContext,
+            &GlobalBackBuffer,
+            Dimension.Width,
+            Dimension.Height);
       }
 
     } else {
