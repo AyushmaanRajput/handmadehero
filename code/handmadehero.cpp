@@ -12,52 +12,35 @@ global_variable HBITMAP BitmapHandle;
 global_variable HDC BitmapDeviceContext;
 
 internal_function void Win32ResizeDIBSection(int Width, int Height) {
-  // TODO: For now we are
-  if(BitmapHandle){
-    // already allocated so free it using DeleteObject
+  if (BitmapHandle) {
     DeleteObject(BitmapHandle);
   }
 
-  if(!BitmapDeviceContext){
-  //NOTE: We create a global  the device context for bitmap here 
-    BitmapDeviceContext= CreateCompatibleDC(0);
+  if (!BitmapDeviceContext) {
+    BitmapDeviceContext = CreateCompatibleDC(0);
   }
-  // fill bitmapinfo
-  // typedef struct tagBITMAPINFO {
-  // BITMAPINFOHEADER bmiHeader;
-  // RGBQUAD          bmiColors[1];
-  //} BITMAPINFO, *LPBITMAPINFO, *PBITMAPINFO;
 
   BitmapInfo.bmiHeader.biSize = sizeof(BitmapInfo.bmiHeader);
   BitmapInfo.bmiHeader.biWidth = Width;
-  BitmapInfo.bmiHeader.biHeight = Height;
+  BitmapInfo.bmiHeader.biHeight = -Height; // Negative height to make the origin at top-left
   BitmapInfo.bmiHeader.biPlanes = 1;
-  BitmapInfo.bmiHeader.biBitCount = 32; // NOTE: Will dicuss later
+  BitmapInfo.bmiHeader.biBitCount = 32;
   BitmapInfo.bmiHeader.biCompression = BI_RGB;
   BitmapInfo.bmiHeader.biSizeImage = 0;
   BitmapInfo.bmiHeader.biXPelsPerMeter = 0;
-  BitmapInfo.bmiHeader.biClrImportant = 0;
+  BitmapInfo.bmiHeader.biYPelsPerMeter = 0;
   BitmapInfo.bmiHeader.biClrUsed = 0;
+  BitmapInfo.bmiHeader.biClrImportant = 0;
 
-  /*    typedef struct tagBITMAPINFOHEADER {
-    DWORD biSize;
-    LONG  biWidth;
-    LONG  biHeight;
-    WORD  biPlanes;
-    WORD  biBitCount;
-    DWORD biCompression;
-    DWORD biSizeImage;
-    LONG  biXPelsPerMeter;
-    LONG  biYPelsPerMeter;
-    DWORD biClrUsed;
-    DWORD biClrImportant;
-  } BITMAPINFOHEADER, *LPBITMAPINFOHEADER, *PBITMAPINFOHEADER;
-  */
+  void* tempMemory = NULL;
+  BitmapHandle = CreateDIBSection(BitmapDeviceContext, &BitmapInfo, DIB_RGB_COLORS, &tempMemory, 0, 0);
 
-  BitmapHandle =
-      CreateDIBSection(BitmapDeviceContext, &BitmapInfo, DIB_RGB_COLORS,
-                       &BitMapMemory,
-                       0, 0);// The bit map memory is what we will get from window to draw to
+  if (!BitmapHandle) {
+    OutputDebugStringA("CreateDIBSection failed!\n");
+  } else {
+    BitMapMemory = tempMemory;
+    OutputDebugStringA("CreateDIBSection succeeded!\n");
+  }
 }
 
 internal_function void Win32UpdateWindow(HDC DeviceContext, int X, int Y,
