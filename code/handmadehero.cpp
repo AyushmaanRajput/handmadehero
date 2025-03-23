@@ -1,9 +1,14 @@
-#include <cstdint>
-#include <iostream>
+#include <math.h>
 #include <stdint.h>
 #include <windows.h>
+#include <xaudio2.h>
 #include <xinput.h>
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+#pragma comment(lib, "xaudio2.lib")
 #define internal_function static
 #define local_persist static
 #define global_variable static
@@ -17,6 +22,128 @@ typedef int8_t int8;
 typedef int16_t int16;
 typedef int32_t int32;
 typedef int64_t int64;
+
+typedef float real32;
+typedef double real64;
+// ========================
+// Audio System Declarations
+// ========================
+
+global_variable IXAudio2 *XAudio2Engine; // NOTE: This is like the thing that
+                                         // manages all the audio processing
+global_variable IXAudio2MasteringVoice
+    *MasteringVoice; // NOTE: This is the actaul speaker output, handles
+                     // converting digitial sound to actual audio waves
+global_variable IXAudio2SourceVoice
+    *SourceVoice; // NOTE: This is like a audio cd(track ) that we will later
+                  // feed the audio data into
+global_variable WAVEFORMATEX WaveFormat;
+global_variable XAUDIO2_BUFFER AudioBuffer;
+global_variable int16 *WaveBuffer;
+global_variable uint32 WaveBufferSize;
+
+internal_function bool InitAudioSystem() {
+  HRESULT hr;
+
+  // Initialize COM for XAudio2
+  hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+  if (FAILED(hr))
+    return false;
+
+  // Create XAudio2 engine
+  hr = XAudio2Create(&XAudio2Engine, 0, XAUDIO2_DEFAULT_PROCESSOR);
+  if (FAILED(hr))
+    return false;
+
+  // Create mastering voice
+  hr = XAudio2Engine->CreateMasteringVoice(&MasteringVoice);
+  if (FAILED(hr))
+    return false;
+
+  // Setup wave format (PCM, 44.1kHz, 16-bit, mono)
+  WaveFormat.wFormatTag = WAVE_FORMAT_PCM;
+  WaveFormat.nChannels = 1;
+  WaveFormat.nSamplesPerSec = 44100;
+  WaveFormat.nAvgBytesPerSec = 44100 * sizeof(int16);
+  WaveFormat.nBlockAlign = sizeof(int16);
+  WaveFormat.wBitsPerSample = 16;
+  WaveFormat.cbSize = 0;
+
+  // Create source voice
+  hr = XAudio2Engine->CreateSourceVoice(&SourceVoice, &WaveFormat);
+  return SUCCEEDED(hr);
+}
+
+internal_function void ShutdownAudioSystem() {
+  if (SourceVoice) {
+    SourceVoice->Stop(0);
+    SourceVoice->DestroyVoice();
+    SourceVoice = nullptr;
+  }
+  if (MasteringVoice) {
+    MasteringVoice->DestroyVoice();
+    MasteringVoice = nullptr;
+  }
+  if (XAudio2Engine) {
+    XAudio2Engine->Release();
+    XAudio2Engine = nullptr;
+  }
+  if (WaveBuffer) {
+    VirtualFree(WaveBuffer, 0, MEM_RELEASE);
+    WaveBuffer = nullptr;
+  }
+  CoUninitialize();
+}
+
+internal_function bool
+CreateSineWaveBuffer(uint32 FrequencyHz, real32 DurationSeconds) {
+  // Calculate buffer parameters
+  const uint32 samplesPerSecond = 44100;
+  const uint32 totalSamples = (uint32)(samplesPerSecond * DurationSeconds);
+  const uint32 bufferSize = totalSamples * sizeof(int16);
+
+  // Allocate buffer memory
+  WaveBuffer = (int16 *)VirtualAlloc(0, bufferSize, MEM_COMMIT, PAGE_READWRITE);
+  if (!WaveBuffer)
+    return false;
+
+  // Define wave amplitude (max 16-bit signed value, e.g., 10000)
+  const real32 Amplitude = 10000.0f;
+
+  // Generate sine wave pattern
+  for (uint32 i = 0; i < totalSamples; ++i) {
+    // Calculate the time for the current sample (i / sampleRate)
+    real32 time = (real32)i / (real32)samplesPerSecond;
+    // Compute the sine wave sample
+    real32 sample = Amplitude * sinf(2.0f * (real32)M_PI * FrequencyHz * time);
+    // Cast to int16 and store
+    WaveBuffer[i] = (int16)sample;
+  }
+
+  // Configure audio buffer
+  ZeroMemory(&AudioBuffer, sizeof(XAUDIO2_BUFFER));
+  AudioBuffer.AudioBytes = bufferSize;
+  AudioBuffer.pAudioData = (BYTE *)WaveBuffer;
+  AudioBuffer.Flags = XAUDIO2_END_OF_STREAM;
+  AudioBuffer.LoopCount = XAUDIO2_LOOP_INFINITE;
+
+  return true;
+}
+
+internal_function void PlayWave() {
+  if (!SourceVoice)
+    return;
+
+  // Stop and flush any existing buffers
+  SourceVoice->Stop(0);
+  SourceVoice->FlushSourceBuffers();
+
+  // Submit new buffer and start playing
+  HRESULT hr = SourceVoice->SubmitSourceBuffer(&AudioBuffer);
+  if (SUCCEEDED(hr)) {
+    SourceVoice->Start(0);
+  }
+}
 
 // Define function signatures for XInput functions
 #define X_INPUT_GET_STATE(name)                                                \
@@ -241,27 +368,16 @@ LRESULT CALLBACK Win32MainWindowCallback(
         /*}*/
         /*OutputDebugStringA("\n");*/
       } else if (vkCode == 'A') {
-        OutputDebugStringA("A\n");
       } else if (vkCode == 'S') {
-        OutputDebugStringA("S\n");
       } else if (vkCode == 'D') {
-        OutputDebugStringA("D\n");
       } else if (vkCode == VK_SPACE) {
-        OutputDebugStringA("Spacebar\n");
       } else if (vkCode == VK_LEFT) {
-        OutputDebugStringA("Left Arrow\n");
       } else if (vkCode == VK_RIGHT) {
-        OutputDebugStringA("Right Arrow\n");
       } else if (vkCode == VK_UP) {
-        OutputDebugStringA("Up Arrow\n");
       } else if (vkCode == VK_DOWN) {
-        OutputDebugStringA("Down Arrow\n");
       } else if (vkCode == 'Q') {
-        OutputDebugStringA("Q\n");
       } else if (vkCode == 'E') {
-        OutputDebugStringA("E\n");
       } else if (vkCode == VK_ESCAPE) {
-        OutputDebugStringA("Escape\n");
       }
     }
   } break;
@@ -274,22 +390,17 @@ LRESULT CALLBACK Win32MainWindowCallback(
     EndPaint(windowHandle, &PaintStruct);
   } break;
   case WM_SIZE: {
-    OutputDebugStringA("change size\n ");
   } break;
   case WM_DESTROY: {
     Running = false;
-    OutputDebugStringA("destroy\n");
   } break;
   case WM_CLOSE: {
     // PostQuitMessage(0);
     Running = false;
-    OutputDebugStringA("Close The Window\n");
   } break;
   case WM_ACTIVATEAPP: {
-    OutputDebugStringA("Activate App\n");
   } break;
   default: {
-    OutputDebugStringA("Default\n");
     Result = DefWindowProcA(windowHandle, message, WParam, LParam);
   } break;
   }
@@ -300,7 +411,27 @@ int CALLBACK WinMain(
     HINSTANCE PrevInstance,
     LPSTR CommandLine,
     int ShowCode) {
+  // Get Performance frequency of the processor??
+  LARGE_INTEGER PerfCountFrequency;
+  QueryPerformanceFrequency(&PerfCountFrequency);
+  int64 PerformanceFrequency = PerfCountFrequency.QuadPart;
+
   LoadXInput();
+
+  if (!InitAudioSystem()) {
+    // Handle audio initialization failure
+    return 1;
+  }
+
+  // Create 440Hz square wave (A4 note) that lasts 1 second (but will loop)
+  if (!CreateSineWaveBuffer(440, 1.0f)) {
+    // Handle buffer creation failure
+    ShutdownAudioSystem();
+    return 1;
+  }
+
+  // Start playing the square wave
+  PlayWave();
   WNDCLASS WindowClass =
       {}; // sets all properties of Window class like uint style etc to 0.
   // Make the back buffer first
@@ -347,6 +478,8 @@ int CALLBACK WinMain(
       Running = true;
       int XOffset = 0;
       int YOffset = 0;
+      LARGE_INTEGER LastCounter;
+      QueryPerformanceCounter(&LastCounter);
       while (Running) {
         // Step1: Read the message of the queue
         while (PeekMessageA(
@@ -366,7 +499,8 @@ int CALLBACK WinMain(
         /*
          * NOTE: Xinput is a polling based API so we will only get the
          * controller input when we ask for it.
-         * TODO: Figure out if we have to poll it more frequently
+         * TODO: Figure out if we have to poll it more frequently than each
+         * frame
          */
         for (DWORD ControllerIndex = 0; ControllerIndex < XUSER_MAX_COUNT;
              ++ControllerIndex) {
@@ -408,10 +542,10 @@ int CALLBACK WinMain(
           }
         }
 
-        /*XINPUT_VIBRATION Vibration;*/
-        /*Vibration.wLeftMotorSpeed = 60000;*/
-        /*Vibration.wRightMotorSpeed = 60000;*/
-        /*XInputSetState(0, &Vibration);*/
+        // XINPUT_VIBRATION Vibration;
+        // Vibration.wLeftMotorSpeed = 60000;
+        // Vibration.wRightMotorSpeed = 60000;
+        // XInputSetState(0, &Vibration);
 
         // Step2: Render(calcualte) the gradient in background inside of our
         // backbuffer
@@ -424,6 +558,22 @@ int CALLBACK WinMain(
             &GlobalBackBuffer,
             Dimension.Width,
             Dimension.Height);
+
+        LARGE_INTEGER EndCounter;
+        QueryPerformanceCounter(&EndCounter);
+        int64 CounterElapsed = EndCounter.QuadPart - LastCounter.QuadPart;
+        int64 TimeElapsed =
+            (CounterElapsed * 1000) /
+            PerformanceFrequency; // NOTE: this will tend to 0 so we multiply
+                                  // the counterElpased by 1000 to give value in
+                                  // milliseconds/Frame
+        int64 FPS= 1000/TimeElapsed;
+
+        char Buffer[256];
+        wsprintfA(Buffer, "Milliseconds/frame: %dms FPS: %d\n", TimeElapsed, FPS);
+        OutputDebugStringA(Buffer);
+
+        LastCounter = EndCounter;
       }
 
     } else {
@@ -432,5 +582,7 @@ int CALLBACK WinMain(
   } else {
     // rare case: registering fails
   }
+  // Cleanup at end of program
+  ShutdownAudioSystem();
   return (0);
 }
