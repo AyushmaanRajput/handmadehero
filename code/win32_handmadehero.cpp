@@ -1,5 +1,7 @@
+#include "handmade.cpp"
+#include "handmade.h"
+
 #include <math.h>
-#include <stdint.h>
 #include <windows.h>
 #include <xaudio2.h>
 #include <xinput.h>
@@ -9,22 +11,6 @@
 #endif
 
 #pragma comment(lib, "xaudio2.lib")
-#define internal_function static
-#define local_persist static
-#define global_variable static
-
-typedef uint8_t uint8;
-typedef uint16_t uint16;
-typedef uint32_t uint32;
-typedef uint64_t uint64;
-
-typedef int8_t int8;
-typedef int16_t int16;
-typedef int32_t int32;
-typedef int64_t int64;
-
-typedef float real32;
-typedef double real64;
 // ========================
 // Audio System Declarations
 // ========================
@@ -42,9 +28,12 @@ global_variable XAUDIO2_BUFFER AudioBuffer;
 global_variable int16 *WaveBuffer;
 global_variable uint32 WaveBufferSize;
 
+global_variable game_sound_output_buffer SoundBuffers[2];
+global_variable int ActiveBufferIndex = 0;
+global_variable real32 CurrentToneHz = 440.0f;
+
 internal_function bool InitAudioSystem() {
   HRESULT hr;
-
   // Initialize COM for XAudio2
   hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
   if (FAILED(hr))
@@ -62,16 +51,37 @@ internal_function bool InitAudioSystem() {
 
   // Setup wave format (PCM, 44.1kHz, 16-bit, mono)
   WaveFormat.wFormatTag = WAVE_FORMAT_PCM;
-  WaveFormat.nChannels = 1;
+  WaveFormat.nChannels = 2;
   WaveFormat.nSamplesPerSec = 44100;
-  WaveFormat.nAvgBytesPerSec = 44100 * sizeof(int16);
-  WaveFormat.nBlockAlign = sizeof(int16);
+  WaveFormat.nAvgBytesPerSec = 44100 * sizeof(int16) * 2;
+  WaveFormat.nBlockAlign = sizeof(int16) * 2;
   WaveFormat.wBitsPerSample = 16;
   WaveFormat.cbSize = 0;
 
   // Create source voice
   hr = XAudio2Engine->CreateSourceVoice(&SourceVoice, &WaveFormat);
   return SUCCEEDED(hr);
+}
+
+internal_function bool CreateAudioBuffer(
+    game_sound_output_buffer *SoundBuffer,
+    real32 DurationSeconds) {
+  const uint32 samplesPerSecond = 44100;
+  const uint32 totalSamples = samplesPerSecond * DurationSeconds * 2;
+  const uint32 bufferSize = totalSamples * sizeof(int16);
+
+  SoundBuffer->Samples =
+      (int16 *)VirtualAlloc(0, bufferSize, MEM_COMMIT, PAGE_READWRITE);
+  if (!SoundBuffer->Samples)
+    return false;
+
+  SoundBuffer->SampleCount = totalSamples;
+  SoundBuffer->SamplesPerSecond = samplesPerSecond;
+  SoundBuffer->RunningSampleIndex = 0;
+  // When creating audio buffer:
+  SoundBuffer->TotalSamplesElapsed = 0;
+  SoundBuffer->ToneHz = 440;
+  return true;
 }
 
 internal_function void ShutdownAudioSystem() {
@@ -93,56 +103,6 @@ internal_function void ShutdownAudioSystem() {
     WaveBuffer = nullptr;
   }
   CoUninitialize();
-}
-
-internal_function bool
-CreateSineWaveBuffer(uint32 FrequencyHz, real32 DurationSeconds) {
-  // Calculate buffer parameters
-  const uint32 samplesPerSecond = 44100;
-  const uint32 totalSamples = (uint32)(samplesPerSecond * DurationSeconds);
-  const uint32 bufferSize = totalSamples * sizeof(int16);
-
-  // Allocate buffer memory
-  WaveBuffer = (int16 *)VirtualAlloc(0, bufferSize, MEM_COMMIT, PAGE_READWRITE);
-  if (!WaveBuffer)
-    return false;
-
-  // Define wave amplitude (max 16-bit signed value, e.g., 10000)
-  const real32 Amplitude = 10000.0f;
-
-  // Generate sine wave pattern
-  for (uint32 i = 0; i < totalSamples; ++i) {
-    // Calculate the time for the current sample (i / sampleRate)
-    real32 time = (real32)i / (real32)samplesPerSecond;
-    // Compute the sine wave sample
-    real32 sample = Amplitude * sinf(2.0f * (real32)M_PI * FrequencyHz * time);
-    // Cast to int16 and store
-    WaveBuffer[i] = (int16)sample;
-  }
-
-  // Configure audio buffer
-  ZeroMemory(&AudioBuffer, sizeof(XAUDIO2_BUFFER));
-  AudioBuffer.AudioBytes = bufferSize;
-  AudioBuffer.pAudioData = (BYTE *)WaveBuffer;
-  AudioBuffer.Flags = XAUDIO2_END_OF_STREAM;
-  AudioBuffer.LoopCount = XAUDIO2_LOOP_INFINITE;
-
-  return true;
-}
-
-internal_function void PlayWave() {
-  if (!SourceVoice)
-    return;
-
-  // Stop and flush any existing buffers
-  SourceVoice->Stop(0);
-  SourceVoice->FlushSourceBuffers();
-
-  // Submit new buffer and start playing
-  HRESULT hr = SourceVoice->SubmitSourceBuffer(&AudioBuffer);
-  if (SUCCEEDED(hr)) {
-    SourceVoice->Start(0);
-  }
 }
 
 // Define function signatures for XInput functions
@@ -224,50 +184,7 @@ internal_function win32_window_dimension Win32GetWindowDimension(HWND Window) {
 
   return (WindowDimension);
 }
-internal_function void Win32RenderWeirdGradient(
-    win32_offscreen_buffer *Buffer,
-    int XOffset,
-    int YOffset) {
 
-  // NOTE:THIS IS WHERE WE ACTUALLY START DRAWING
-  // NOTE: Once we have the memory we can draw in int
-  // case the void* as unit8
-
-  uint8 *Row = (uint8 *)Buffer->Memory;
-  // pixels on the my game window have
-  for (int Y = 0; Y < Buffer->Height; Y++) {
-    uint32 *Pixel = (uint32 *)Row;
-    for (int X = 0; X < Buffer->Width; X++) {
-      /*
-       * Pixel in Memory 00 00 00 00
-       * Common Sense:   RR GG BB XX(Some padding)
-       * */
-      /**Pixel = (uint8)(X + XOffset); // NOTE: Writing to First Byte pixel;*/
-      /*++Pixel;*/
-      /**Pixel = (uint8)(Y + YOffset); // NOTE: Writing to pixel*/
-      /*++Pixel;*/
-      /**/
-      /**Pixel = 0; // NOTE: Writing to pixel*/
-      /*++Pixel;*/
-      /**/
-      /**Pixel = 0; // NOTE: Writing to pixel*/
-      /*++Pixel;*/
-
-      // NOTE: For 32 bits calculations
-      /*
-       * Memory:    BB GG RR XX
-       * Register:  XX RR GG BB
-       * so to write to the greet bits we have to shift by 8 and for red 16
-       *
-       * */
-      uint8 Blue = (X + XOffset);
-      uint8 Green = (Y + YOffset);
-      uint8 Red = ((X + Y) + (XOffset + YOffset));
-      *Pixel++ = ((Green << 8) | Blue | (Red << 16));
-    }
-    Row += Buffer->Pitch;
-  }
-}
 internal_function void Win32DisplayBufferInWindow(
     HDC DeviceContext,
     win32_offscreen_buffer *Buffer,
@@ -422,16 +339,19 @@ int CALLBACK WinMain(
     // Handle audio initialization failure
     return 1;
   }
-
-  // Create 440Hz square wave (A4 note) that lasts 1 second (but will loop)
-  if (!CreateSineWaveBuffer(440, 1.0f)) {
-    // Handle buffer creation failure
-    ShutdownAudioSystem();
-    return 1;
+  CreateAudioBuffer(&SoundBuffers[0], 0.1f); // 100ms buffer
+  CreateAudioBuffer(&SoundBuffers[1], 0.1f);
+  SoundBuffers[0].ToneHz = 440;
+  SoundBuffers[1].ToneHz = 440;
+  XAUDIO2_BUFFER xbuffs[2] = {0};
+  for (int i = 0; i < 2; i++) {
+    xbuffs[i].AudioBytes = SoundBuffers[i].SampleCount * sizeof(int16);
+    xbuffs[i].pAudioData = (BYTE *)SoundBuffers[i].Samples;
+    xbuffs[i].Flags = XAUDIO2_END_OF_STREAM;
+    SourceVoice->SubmitSourceBuffer(&xbuffs[i]);
   }
-
-  // Start playing the square wave
-  PlayWave();
+  SourceVoice->Start(0);
+  // Define the game window
   WNDCLASS WindowClass =
       {}; // sets all properties of Window class like uint style etc to 0.
   // Make the back buffer first
@@ -480,28 +400,17 @@ int CALLBACK WinMain(
       int YOffset = 0;
       LARGE_INTEGER LastCounter;
       QueryPerformanceCounter(&LastCounter);
+
+      // Create 440Hz square wave (A4 note) that lasts 1 second (but will loop)
+
       while (Running) {
-        // Step1: Read the message of the queue
-        while (PeekMessageA(
-            &Message,
-            0,
-            0,
-            0,
-            PM_REMOVE)) { // PeekMessage only processes the message when there
-                          // is something there and is non-blocking unlike
-                          // GetMessagge
-          if (Message.message == WM_QUIT) {
-            Running = false;
-          }
-          TranslateMessage(&Message);
-          DispatchMessageA(&Message);
-        }
         /*
          * NOTE: Xinput is a polling based API so we will only get the
          * controller input when we ask for it.
          * TODO: Figure out if we have to poll it more frequently than each
          * frame
          */
+        int16 globalStickY = 0; // Default value if no controller
         for (DWORD ControllerIndex = 0; ControllerIndex < XUSER_MAX_COUNT;
              ++ControllerIndex) {
           XINPUT_STATE ControllerState;
@@ -528,18 +437,66 @@ int CALLBACK WinMain(
 
             int16 StickX = GamePad->sThumbLX;
             int16 StickY = GamePad->sThumbLY;
-            if (AButton) {
-              ++YOffset;
-            }
 
-            if (BButton) {
-              ++XOffset;
-            }
+            XOffset += StickX / 4096;
+            YOffset += StickY / 4096;
+            globalStickY = StickY;
+            real32 TargetToneHz = 512 + (256.0f * ((real32)StickY / 32768.0f));
+            CurrentToneHz +=
+                (TargetToneHz - CurrentToneHz) * 0.1f; // Smooth transition
+            int bufferIndex = (ActiveBufferIndex + 1) % 2;
+            SoundBuffers[bufferIndex].ToneHz = (int)TargetToneHz;
           } else {
             // Controller is not connected
             // This is important as we might want to show that a particular user
             // has disconnected etc.
           }
+        }
+
+        // Step1: Read the message of the queue
+        XAUDIO2_VOICE_STATE state;
+        SourceVoice->GetState(&state);
+
+        // Debug output
+        char Buffer2[256];
+        wsprintfA(Buffer2, "StickY: %d\n", globalStickY);
+        OutputDebugStringA(Buffer2);
+
+        if (state.BuffersQueued < 2) {
+          // Determine which buffer to update
+          int bufferIndex = (ActiveBufferIndex + 1) % 2;
+          // Generate samples with phase continuity
+          wsprintfA(
+              Buffer2,
+              "Current ToneHz: %d\n",
+              SoundBuffers[bufferIndex].ToneHz);
+          OutputDebugStringA(Buffer2);
+          GameGenerateSoundSamples(
+              &SoundBuffers[bufferIndex], RunningSampleIndex);
+
+          // Submit the new buffer
+          XAUDIO2_BUFFER xbuff = {0};
+          xbuff.AudioBytes =
+              SoundBuffers[bufferIndex].SampleCount * sizeof(int16);
+          xbuff.pAudioData = (BYTE *)SoundBuffers[bufferIndex].Samples;
+          SourceVoice->SubmitSourceBuffer(&xbuff);
+
+          ActiveBufferIndex = bufferIndex;
+        }
+
+        while (PeekMessageA(
+            &Message,
+            0,
+            0,
+            0,
+            PM_REMOVE)) { // PeekMessage only processes the message when there
+                          // is something there and is non-blocking unlike
+                          // GetMessagge
+          if (Message.message == WM_QUIT) {
+            Running = false;
+          }
+          TranslateMessage(&Message);
+          DispatchMessageA(&Message);
         }
 
         // XINPUT_VIBRATION Vibration;
@@ -549,7 +506,14 @@ int CALLBACK WinMain(
 
         // Step2: Render(calcualte) the gradient in background inside of our
         // backbuffer
-        Win32RenderWeirdGradient(&GlobalBackBuffer, XOffset, YOffset);
+        // Win32RenderWeirdGradient(&GlobalBackBuffer, XOffset, YOffset);
+        game_offscreen_buffer Buffer = {};
+        Buffer.Memory = GlobalBackBuffer.Memory;
+        Buffer.Width = GlobalBackBuffer.Width;
+        Buffer.Height = GlobalBackBuffer.Height;
+        Buffer.Pitch = GlobalBackBuffer.Pitch;
+        GameUpdateAndRender(&Buffer, XOffset, YOffset);
+
         win32_window_dimension Dimension =
             Win32GetWindowDimension(WindowHandle);
         // Step3: Display our back buffer ( Acutal Rendering to the screen )
@@ -558,7 +522,6 @@ int CALLBACK WinMain(
             &GlobalBackBuffer,
             Dimension.Width,
             Dimension.Height);
-
         LARGE_INTEGER EndCounter;
         QueryPerformanceCounter(&EndCounter);
         int64 CounterElapsed = EndCounter.QuadPart - LastCounter.QuadPart;
@@ -567,11 +530,13 @@ int CALLBACK WinMain(
             PerformanceFrequency; // NOTE: this will tend to 0 so we multiply
                                   // the counterElpased by 1000 to give value in
                                   // milliseconds/Frame
-        int64 FPS= 1000/TimeElapsed;
+        int64 FPS = 1000 / TimeElapsed;
 
-        char Buffer[256];
-        wsprintfA(Buffer, "Milliseconds/frame: %dms FPS: %d\n", TimeElapsed, FPS);
-        OutputDebugStringA(Buffer);
+        // char Buffer[256];
+        // wsprintfA(
+        //            Buffer, "Milliseconds/frame: %dms FPS: %d\n", TimeElapsed,
+        //            FPS);
+        // OutputDebugStringA(Buffer);
 
         LastCounter = EndCounter;
       }
